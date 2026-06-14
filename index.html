@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ループ防止ダッシュボード</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,300;1,400&family=Shippori+Mincho:wght@400;500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#E7E5DD;
+    --panel:#F3F1EA;
+    --ink:#211F1B;
+    --ink-soft:#6C685F;
+    --line:#211F1B;
+    --flow:#356760;     /* 進行中 teal */
+    --rest:#5C6B82;     /* 寝かせ中 dusty blue */
+    --settled:#977A3C;  /* 決着 antique gold */
+    --gutter:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Zen Kaku Gothic New",sans-serif;
+    line-height:1.6;
+    padding:var(--gutter);
+    max-width:560px;margin:0 auto;
+    /* subtle paper grain */
+    background-image:radial-gradient(circle at 1px 1px, rgba(0,0,0,0.025) 1px, transparent 0);
+    background-size:4px 4px;
+  }
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+  /* ── header ── */
+  header{padding:6px 2px 10px}
+  .date{font-family:"Cormorant Garamond",serif;font-style:italic;font-weight:300;
+    font-size:15px;letter-spacing:.04em;color:var(--ink-soft)}
+  h1{font-family:"Shippori Mincho",serif;font-weight:600;font-size:23px;
+    letter-spacing:.02em;margin:1px 0 4px}
+  .sub{font-size:12.5px;color:var(--ink-soft);letter-spacing:.02em}
+
+  /* ── data io (書き出し / 読み込み) ── */
+  .io{display:flex;gap:16px;justify-content:flex-end;align-items:center;
+    padding:0 2px 16px}
+  .io button{background:none;border:none;cursor:pointer;color:var(--ink-soft);
+    font-family:"Zen Kaku Gothic New";font-size:11.5px;letter-spacing:.08em;
+    padding:2px 0;border-bottom:1px solid rgba(33,31,27,.28)}
+  .io button:active{color:var(--ink)}
+
+  /* ── generic panel (manga frame) ── */
+  .panel{background:var(--panel);border:1.5px solid var(--line);
+    border-radius:2px;padding:14px 14px 13px;margin-bottom:var(--gutter);
+    box-shadow:3px 3px 0 rgba(33,31,27,.07)}
+  .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.22em;
+    color:var(--ink-soft);text-transform:uppercase;margin-bottom:9px;
+    display:flex;align-items:center;gap:8px}
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--line);opacity:.25}
+
+  /* ── compass (北極星) ── */
+  .compass .row{display:flex;gap:10px;padding:7px 0;border-bottom:1px dotted rgba(33,31,27,.2)}
+  .compass .row:last-child{border-bottom:none}
+  .compass .tag{font-size:11px;font-weight:700;color:var(--ink-soft);
+    min-width:34px;padding-top:3px}
+  .compass .aim{font-family:"Shippori Mincho",serif;font-size:14.5px;line-height:1.55;flex:1}
+  .quiet-add{background:none;border:none;cursor:pointer;
+    font-family:"Zen Kaku Gothic New";font-size:11.5px;color:var(--ink-soft);
+    letter-spacing:.04em;padding:8px 0 1px;margin-top:4px}
+  .quiet-add:active{color:var(--ink)}
+
+  /* ── lens filter ── */
+  .lens{display:flex;gap:7px;overflow-x:auto;padding:2px 2px 12px;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .lens::-webkit-scrollbar{display:none}
+  .chip{flex:0 0 auto;font-size:12px;font-weight:500;
+    border:1.3px solid var(--line);background:transparent;color:var(--ink);
+    padding:5px 13px;border-radius:20px;cursor:pointer;letter-spacing:.04em;
+    transition:background .15s,color .15s}
+  .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+
+  /* ── worry cards ── */
+  .worries{display:flex;flex-direction:column;gap:var(--gutter)}
+  .worry{background:var(--panel);border:1.5px solid var(--line);border-radius:2px;
+    padding:0;overflow:hidden;box-shadow:3px 3px 0 rgba(33,31,27,.07);
+    animation:rise .35s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .worry .head{display:flex;align-items:flex-start;gap:10px;padding:13px 13px 9px}
+  .worry .text{font-family:"Shippori Mincho",serif;font-size:15.5px;
+    line-height:1.55;flex:1;letter-spacing:.01em}
+  .state{flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.08em;
+    padding:3px 9px;border-radius:2px;color:#fff;cursor:pointer;white-space:nowrap;
+    margin-top:2px;user-select:none}
+  .s-flow{background:var(--flow)}
+  .s-rest{background:var(--rest)}
+  .s-settled{background:var(--settled)}
+  .worry .act{padding:9px 13px 12px;border-top:1px solid rgba(33,31,27,.13);
+    font-size:13px;display:flex;gap:7px;align-items:baseline}
+  .act .arrow{color:var(--ink-soft);font-weight:700;flex:0 0 auto}
+  .act .what{color:var(--ink);flex:1}
+  .act .what.empty{color:var(--ink-soft);font-style:italic}
+  .meta{display:flex;gap:6px;padding:0 13px 12px;flex-wrap:wrap}
+  .cat{font-size:10px;color:var(--ink-soft);border:1px solid rgba(33,31,27,.25);
+    padding:1px 7px;border-radius:10px;letter-spacing:.06em}
+  .empty-note{text-align:center;color:var(--ink-soft);
+    font-family:"Shippori Mincho",serif;font-size:13px;padding:18px 0}
+
+  /* resting state look: recedes, dashed, peaceful */
+  .worry.rest{border-style:dashed;opacity:.82;box-shadow:none}
+  .worry.rest .act .what{color:var(--ink-soft);font-style:normal}
+  /* settled look: quiet, kept as proof */
+  .worry.settled{opacity:.7}
+  .worry.settled .text{text-decoration:line-through;text-decoration-color:rgba(33,31,27,.35)}
+
+  /* add bar */
+  .add{display:flex;gap:8px;margin:2px 0 4px}
+  .add input{flex:1;font-family:"Shippori Mincho",serif;font-size:14px;
+    border:1.3px dashed var(--line);background:transparent;border-radius:2px;
+    padding:11px 12px;color:var(--ink)}
+  .add input::placeholder{color:var(--ink-soft);font-style:normal}
+  .add input:focus{outline:2px solid var(--flow);outline-offset:1px}
+  .add button{font-family:"Zen Kaku Gothic New";font-weight:700;font-size:13px;
+    border:1.5px solid var(--line);background:var(--ink);color:var(--panel);
+    border-radius:2px;padding:0 16px;cursor:pointer}
+  .hint{font-size:11px;color:var(--ink-soft);text-align:center;margin:2px 0 22px;
+    letter-spacing:.02em;line-height:1.7}
+
+  /* ── foundation (土台) ── */
+  .foundation{background:var(--ink);color:var(--panel);border-color:var(--ink);
+    box-shadow:3px 3px 0 rgba(33,31,27,.18)}
+  .foundation .eyebrow{color:rgba(243,241,234,.6)}
+  .foundation .eyebrow::after{background:var(--panel);opacity:.3}
+  .foundation ul{list-style:none}
+  .foundation li{font-family:"Shippori Mincho",serif;font-size:14.5px;
+    padding:8px 0 8px 22px;position:relative;line-height:1.55;
+    border-bottom:1px solid rgba(243,241,234,.12)}
+  .foundation li:last-child{border-bottom:none}
+  .foundation li::before{content:"✓";position:absolute;left:0;top:8px;
+    color:var(--settled);font-weight:700;font-size:13px}
+  .foundation .close{font-family:"Cormorant Garamond",serif;font-style:italic;
+    font-weight:300;font-size:14px;color:rgba(243,241,234,.55);
+    text-align:right;margin-top:11px;letter-spacing:.03em}
+  .found-add{display:flex;gap:8px;margin-top:13px}
+  .found-add input{flex:1;font-family:"Shippori Mincho",serif;font-size:14px;
+    border:1px dashed rgba(243,241,234,.32);background:transparent;border-radius:2px;
+    padding:9px 11px;color:var(--panel)}
+  .found-add input::placeholder{color:rgba(243,241,234,.45);font-style:normal}
+  .found-add input:focus{outline:1.5px solid var(--settled);outline-offset:1px}
+  .found-add button{font-family:"Zen Kaku Gothic New";font-weight:700;font-size:13px;
+    border:none;background:var(--panel);color:var(--ink);
+    border-radius:2px;padding:0 14px;cursor:pointer}
+
+  /* ── inline editing & long-press feel ── */
+  .worry .text,.compass .row,.foundation li{
+    -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
+    touch-action:manipulation}
+  .state,.chip,.what{touch-action:manipulation}
+  .editing{background:rgba(53,103,96,.08);box-shadow:inset 0 0 0 1.5px var(--flow);
+    border-radius:2px;outline:none;cursor:text;
+    -webkit-user-select:text!important;user-select:text!important}
+  .foundation .editing{background:rgba(243,241,234,.1);
+    box-shadow:inset 0 0 0 1.5px var(--settled)}
+
+  footer{text-align:center;font-size:10.5px;color:var(--ink-soft);
+    padding:24px 0 10px;letter-spacing:.06em}
+  footer span{font-family:"Cormorant Garamond",serif;font-style:italic}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="date" id="today">—</div>
+  <h1>ループ防止ダッシュボード</h1>
+  <div class="sub">いまぐるぐるしてること、全部ここに降ろす。</div>
+</header>
+
+<div class="io">
+  <button id="exportBtn">書き出し</button>
+  <button id="importBtn">読み込み</button>
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+</div>
+
+<!-- 北極星 / compass -->
+<section class="panel compass">
+  <div class="eyebrow">北極星 ・ どこへ向かうか</div>
+  <div id="compass"></div>
+  <button class="quiet-add" id="compassAdd">＋ 北極星を足す</button>
+</section>
+
+<!-- lens -->
+<div class="eyebrow" style="padding:0 2px 6px">いま抱えていること ・ レンズで絞る</div>
+<div class="lens" id="lens">
+  <button class="chip" data-cat="all" aria-pressed="true">すべて</button>
+  <button class="chip" data-cat="仕事" aria-pressed="false">仕事</button>
+  <button class="chip" data-cat="創作" aria-pressed="false">創作</button>
+  <button class="chip" data-cat="家庭" aria-pressed="false">家庭</button>
+  <button class="chip" data-cat="自分" aria-pressed="false">自分</button>
+</div>
+
+<div class="worries" id="worries"></div>
+
+<div class="add">
+  <input id="newWorry" type="text" placeholder="いま浮かんでること を放り込む（分類はあとで）" aria-label="新しい悩みを追加">
+  <button id="addBtn">降ろす</button>
+</div>
+<div class="hint">状態タグをタップ → 進行中 ⇄ 寝かせ中 ⇄ 決着<br>本文・アクションはタップで編集 ・ 長押しで削除</div>
+
+<!-- 土台 / foundation -->
+<section class="panel foundation">
+  <div class="eyebrow">これまで積み上げてきたもの</div>
+  <ul id="foundation"></ul>
+  <div class="close">— 辛くなったらここを見て！</div>
+  <div class="found-add">
+    <input id="newFound" type="text" placeholder="＋ 積み上げを足す" aria-label="積み上げを追加">
+    <button id="foundAddBtn">足す</button>
+  </div>
+</section>
+
+<footer><span>Static Signal.</span> ・ loop breaker</footer>
+
+<script>
+  // ── constants ──
+  const STORE_KEY="loop-dashboard-v1";
+  const STATES=["flow","rest","settled"];
+  const LABEL={flow:"進行中",rest:"寝かせ中",settled:"決着"};
+  const REST_TEXT="今は寝かせる。抱えておくだけでいい";
+
+  // ── today (computed, not stored) ──
+  (function(){
+    const d=new Date();
+    const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    document.getElementById("today").textContent=
+      d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0")+" "+days[d.getDay()];
+  })();
+
+  // ── default seed (used only when storage is empty) ──
+  function defaultData(){
+    return {
+      version:1,
+      compass:[
+        {tag:"仕事", aim:"復職後は短時間＋リモートを軸に、自分のペースを守る"},
+        {tag:"創作", aim:"MOE を仕上げて、世に出す"},
+        {tag:"自分", aim:"焦らず、絵が上手くなっていく"},
+      ],
+      worries:[
+        {text:"絵が上手くなりたい", state:"flow", act:"毎日ひとつ、落書きを残す", cats:["創作","自分"]},
+        {text:"MOE の後半でテンポが詰まる", state:"flow", act:"次に描く場面から、まず一コマ手をつける", cats:["創作"]},
+        {text:"上長との面談で、働き方をどう切り出すか", state:"flow", act:"短時間・リモートの希望を「一文」にして先に決めておく", cats:["仕事"]},
+        {text:"将来が、漠然と不安", state:"rest", act:"", cats:["自分"]},
+        {text:"夜のワンオペがしんどい日がある", state:"rest", act:"", cats:["家庭","自分"]},
+      ],
+      foundation:[
+        "『一等星の孤独』130p 完成・BOOTH で頒布",
+        "リワーク 9–16 を継続中",
+        "MOE 線画完了 → 仕上げへ",
+        "Python で hoikuen.py を自作",
+        "サークルを Static Signal. として育てている",
+      ],
+    };
+  }
+
+  // ── normalize any loaded/imported object into the canonical shape ──
+  function normalize(p){
+    p=p||{};
+    return {
+      version:1,
+      compass: Array.isArray(p.compass)
+        ? p.compass.map(c=>({tag:String((c&&c.tag)||""), aim:String((c&&c.aim)||"")}))
+        : [],
+      worries: Array.isArray(p.worries)
+        ? p.worries.map(w=>({
+            text:String((w&&w.text)||""),
+            state:(w&&STATES.includes(w.state))?w.state:"rest",
+            act:String((w&&w.act)||""),
+            cats:Array.isArray(w&&w.cats)?w.cats.map(String):[]
+          }))
+        : [],
+      foundation: Array.isArray(p.foundation) ? p.foundation.map(String) : [],
+    };
+  }
+
+  // ── persistence ──
+  function save(){
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
+    catch(e){ /* storage unavailable: keep working in-memory */ }
+  }
+  function load(){
+    try{
+      const raw=localStorage.getItem(STORE_KEY);
+      if(raw){
+        const p=JSON.parse(raw);
+        if(p && p.version===1) return normalize(p);
+      }
+    }catch(e){}
+    return defaultData();
+  }
+
+  // ── state ──
+  let data=load();
+  let filter="all";
+
+  // ── helpers ──
+  function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+  function vibrate(ms){ try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} }
+
+  let lastLongPress=0;
+  function recentLong(){ return Date.now()-lastLongPress<500; }
+
+  // long-press: fires once after the finger is held still long enough
+  function onLongPress(el, handler, ms){
+    ms=ms||550;
+    let timer=null, sx=0, sy=0;
+    const clear=()=>{ if(timer){ clearTimeout(timer); timer=null; } };
+    el.addEventListener("pointerdown",e=>{
+      if(el.isContentEditable) return;
+      sx=e.clientX; sy=e.clientY;
+      clear();
+      timer=setTimeout(()=>{ timer=null; lastLongPress=Date.now(); vibrate(18); handler(); }, ms);
+    });
+    el.addEventListener("pointermove",e=>{
+      if(timer && (Math.abs(e.clientX-sx)>10 || Math.abs(e.clientY-sy)>10)) clear();
+    });
+    el.addEventListener("pointerup",clear);
+    el.addEventListener("pointercancel",clear);
+    el.addEventListener("pointerleave",clear);
+    el.addEventListener("contextmenu",e=>e.preventDefault());
+  }
+
+  // tap-to-edit any text element in place; commit(value) is called on save
+  function editInline(el, current, commit){
+    if(el.isContentEditable) return;
+    el.classList.add("editing");
+    el.contentEditable="true";
+    el.spellcheck=false;
+    el.textContent=current;
+    el.focus();
+    try{
+      const r=document.createRange(); r.selectNodeContents(el); r.collapse(false);
+      const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }catch(e){}
+    let done=false;
+    const finish=(keep)=>{
+      if(done) return; done=true;
+      el.removeEventListener("blur",onBlur);
+      el.removeEventListener("keydown",onKey);
+      el.contentEditable="false";
+      el.classList.remove("editing");
+      if(keep) commit(el.textContent.trim());
+      renderAll();
+    };
+    const onBlur=()=>finish(true);
+    const onKey=e=>{
+      if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); finish(true); }
+      else if(e.key==="Escape"){ e.preventDefault(); finish(false); }
+    };
+    el.addEventListener("blur",onBlur);
+    el.addEventListener("keydown",onKey);
+  }
+
+  // ── render: compass ──
+  function renderCompass(){
+    const box=document.getElementById("compass");
+    box.innerHTML="";
+    data.compass.forEach((c,i)=>{
+      const row=document.createElement("div");
+      row.className="row";
+      row.innerHTML=
+        `<span class="tag" role="button" tabindex="0">${escapeHtml(c.tag)}</span>`+
+        `<span class="aim" role="button" tabindex="0">${escapeHtml(c.aim)}</span>`;
+      box.appendChild(row);
+      onLongPress(row, ()=>deleteCompass(i));
+      const tagEl=row.querySelector(".tag");
+      const aimEl=row.querySelector(".aim");
+      tagEl.addEventListener("click",()=>{ if(recentLong())return; editInline(tagEl, data.compass[i].tag, v=>{ if(v){ data.compass[i].tag=v; save(); } }); });
+      aimEl.addEventListener("click",()=>{ if(recentLong())return; editInline(aimEl, data.compass[i].aim, v=>{ if(v){ data.compass[i].aim=v; save(); } }); });
+    });
+  }
+  function deleteCompass(i){
+    const c=data.compass[i]; if(!c) return;
+    if(confirm("北極星「"+c.tag+"」を削除する？")){ data.compass.splice(i,1); save(); renderCompass(); }
+  }
+  function addCompass(){
+    data.compass.push({tag:"新", aim:""});
+    save(); renderCompass();
+    // drop straight into editing the aim of the new row
+    const aims=document.querySelectorAll("#compass .aim");
+    const last=aims[aims.length-1];
+    if(last) editInline(last, "", v=>{ data.compass[data.compass.length-1].aim=v; save(); });
+  }
+
+  // ── render: worries ──
+  function renderWorries(){
+    const box=document.getElementById("worries");
+    box.innerHTML="";
+    const items=[];
+    data.worries.forEach((w,i)=>{ if(filter==="all"||(w.cats||[]).includes(filter)) items.push([w,i]); });
+    if(items.length===0){
+      box.innerHTML='<div class="empty-note">このレンズでは、いま何も抱えていない。</div>';
+      return;
+    }
+    items.forEach(([w,i])=>{
+      const card=document.createElement("div");
+      card.className="worry "+(w.state==="rest"?"rest":w.state==="settled"?"settled":"");
+      const cats=(w.cats||[]).map(c=>`<span class="cat">${escapeHtml(c)}</span>`).join("");
+      const resting=w.state==="rest";
+      const hasAct=(w.act||"").trim().length>0;
+      const actEmpty=!resting && !hasAct;
+      const actShown=resting ? REST_TEXT : (hasAct ? w.act : "アクションを書く");
+      card.innerHTML=
+        `<div class="head">`+
+          `<div class="text" role="button" tabindex="0">${escapeHtml(w.text)}</div>`+
+          `<div class="state s-${w.state}" role="button" tabindex="0">${LABEL[w.state]}</div>`+
+        `</div>`+
+        `<div class="act"><span class="arrow">→</span><span class="what${actEmpty?' empty':''}" role="button" tabindex="0">${escapeHtml(actShown)}</span></div>`+
+        `<div class="meta">${cats}</div>`;
+      box.appendChild(card);
+
+      const textEl=card.querySelector(".text");
+      const stateEl=card.querySelector(".state");
+      const whatEl=card.querySelector(".what");
+
+      // state cycle
+      stateEl.addEventListener("click",()=>{ if(recentLong())return; cycleState(i); });
+      stateEl.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); cycleState(i); } });
+
+      // text: tap to edit, long-press to delete the whole worry
+      onLongPress(textEl, ()=>deleteWorry(i));
+      textEl.addEventListener("click",()=>{ if(recentLong())return; editInline(textEl, data.worries[i].text, v=>{ if(v){ data.worries[i].text=v; save(); } }); });
+
+      // action: tap to edit the real action (even while resting, you can pre-write it)
+      whatEl.addEventListener("click",()=>{ if(recentLong())return; editInline(whatEl, data.worries[i].act||"", v=>{ data.worries[i].act=v; save(); }); });
+    });
+  }
+  function cycleState(i){
+    const w=data.worries[i]; if(!w) return;
+    w.state=STATES[(STATES.indexOf(w.state)+1)%3];
+    save(); renderWorries();
+  }
+  function deleteWorry(i){
+    const w=data.worries[i]; if(!w) return;
+    const label=w.text.length>18 ? w.text.slice(0,18)+"…" : (w.text||"この悩み");
+    if(confirm("「"+label+"」を削除する？")){ data.worries.splice(i,1); save(); renderWorries(); }
+  }
+  function addWorry(){
+    const inp=document.getElementById("newWorry");
+    const t=inp.value.trim(); if(!t) return;
+    // thrown in raw: no category, no action yet → lands as 寝かせ中 (holding), not a failure
+    data.worries.unshift({text:t, state:"rest", act:"", cats:[]});
+    inp.value="";
+    filter="all";
+    document.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed", c.dataset.cat==="all"));
+    save(); renderWorries();
+  }
+
+  // ── render: foundation ──
+  function renderFoundation(){
+    const ul=document.getElementById("foundation");
+    ul.innerHTML="";
+    data.foundation.forEach((t,i)=>{
+      const li=document.createElement("li");
+      li.textContent=t;            // textContent keeps it safe (escaped)
+      ul.appendChild(li);
+      onLongPress(li, ()=>deleteFoundation(i));
+    });
+  }
+  function deleteFoundation(i){
+    const t=data.foundation[i]; if(t===undefined) return;
+    // achievements aren't meant to be erased casually — make it deliberate
+    if(confirm("この積み上げを消す？\n\n「"+t+"」\n\n達成の記録だよ。")){ data.foundation.splice(i,1); save(); renderFoundation(); }
+  }
+  function addFoundation(){
+    const inp=document.getElementById("newFound");
+    const t=inp.value.trim(); if(!t) return;
+    data.foundation.push(t);
+    inp.value="";
+    save(); renderFoundation();
+  }
+
+  function renderAll(){ renderCompass(); renderWorries(); renderFoundation(); }
+
+  // ── export / import ──
+  function ymd(){
+    const t=new Date();
+    return ""+t.getFullYear()+String(t.getMonth()+1).padStart(2,"0")+String(t.getDate()).padStart(2,"0");
+  }
+  function exportData(){
+    const payload={version:1, compass:data.compass, worries:data.worries, foundation:data.foundation};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download="loop-dashboard-backup-"+ymd()+".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function importData(file){
+    const reader=new FileReader();
+    reader.onload=()=>{
+      let parsed;
+      try{ parsed=JSON.parse(reader.result); }
+      catch(e){ alert("読み込めなかった。JSON ファイルか確認してね。"); return; }
+      if(!parsed || parsed.version!==1){
+        if(!confirm("バージョン情報が違うみたい。それでも読み込んで置き換える？")) return;
+      }else{
+        if(!confirm("読み込むと、いまの内容はすべて置き換わります。続けますか？")) return;
+      }
+      data=normalize(parsed);
+      filter="all";
+      document.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed", c.dataset.cat==="all"));
+      save(); renderAll();
+    };
+    reader.readAsText(file);
+  }
+
+  // ── wiring ──
+  document.getElementById("addBtn").addEventListener("click",addWorry);
+  document.getElementById("newWorry").addEventListener("keydown",e=>{ if(e.key==="Enter") addWorry(); });
+
+  document.getElementById("compassAdd").addEventListener("click",addCompass);
+
+  document.getElementById("foundAddBtn").addEventListener("click",addFoundation);
+  document.getElementById("newFound").addEventListener("keydown",e=>{ if(e.key==="Enter") addFoundation(); });
+
+  document.getElementById("lens").addEventListener("click",e=>{
+    const b=e.target.closest(".chip"); if(!b) return;
+    filter=b.dataset.cat;
+    document.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed", c===b));
+    renderWorries();
+  });
+
+  document.getElementById("exportBtn").addEventListener("click",exportData);
+  document.getElementById("importBtn").addEventListener("click",()=>document.getElementById("importFile").click());
+  document.getElementById("importFile").addEventListener("change",function(){
+    if(this.files && this.files[0]) importData(this.files[0]);
+    this.value="";  // allow re-importing the same file later
+  });
+
+  renderAll();
+</script>
+</body>
+</html>
