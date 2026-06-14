@@ -119,6 +119,19 @@
   .meta{margin-top:7px;display:flex;gap:5px;flex-wrap:wrap}
   .cat{font-size:9.5px;color:var(--ink-soft);border:1px solid rgba(30,28,24,.22);
     padding:1px 7px;border-radius:9px;letter-spacing:.06em}
+  .cat-edit-btn{font-size:9.5px;color:var(--ink-soft);border:1px dashed rgba(30,28,24,.3);
+    background:transparent;padding:1px 8px;border-radius:9px;cursor:pointer;letter-spacing:.06em}
+  .cat-edit-btn:active{color:var(--ink)}
+  .cat-editor{align-items:center}
+  .cat-tog{font-size:9.5px;letter-spacing:.06em;border:1px solid rgba(30,28,24,.3);
+    background:transparent;color:var(--ink-soft);padding:2px 9px;border-radius:9px;cursor:pointer}
+  .cat-tog[aria-pressed="true"]{background:var(--ink);color:var(--plate);border-color:var(--ink)}
+  /* sky tools (declutter) */
+  .sky-tools{display:flex;justify-content:flex-end;padding:0 2px 12px}
+  .ghost-toggle{background:none;border:none;cursor:pointer;color:var(--ink-soft);
+    font-family:"Zen Kaku Gothic New";font-size:10.5px;letter-spacing:.08em;
+    padding:2px 0;border-bottom:1px solid rgba(30,28,24,.22)}
+  .ghost-toggle[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--ink)}
   .state{flex:0 0 auto;font-family:"Zen Kaku Gothic New";font-size:10px;font-weight:700;
     letter-spacing:.07em;padding:3px 8px;border-radius:2px;color:#fff;cursor:pointer;
     white-space:nowrap;user-select:none;-webkit-user-select:none;margin-top:1px}
@@ -190,7 +203,7 @@
   .worry .text,.compass .row,.foundation li{
     -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
     touch-action:manipulation}
-  .state,.chip,.what{touch-action:manipulation}
+  .state,.chip,.what,.cat-tog,.cat-edit-btn,.ghost-toggle{touch-action:manipulation}
   .editing{background:rgba(188,142,62,.1);box-shadow:inset 0 0 0 1.5px var(--flow);
     border-radius:2px;outline:none;cursor:text;
     -webkit-user-select:text!important;user-select:text!important}
@@ -247,6 +260,10 @@
   <button class="chip" data-cat="自分" aria-pressed="false">自分</button>
 </div>
 
+<div class="sky-tools">
+  <button id="toggleSettled" class="ghost-toggle" aria-pressed="false">決着を隠す</button>
+</div>
+
 <div class="worries" id="worries"></div>
 
 <div class="add-cats" id="addCats">
@@ -260,7 +277,7 @@
   <input id="newWorry" type="text" placeholder="いま浮かんでること を放り込む（分類は任意）" aria-label="新しい悩みを追加">
   <button id="addBtn">降ろす</button>
 </div>
-<div class="hint">状態の星をタップ → 進行中（金）⇄ 寝かせ中（眠る）⇄ 決着（星座へ）<br>本文・アクションはタップで編集 ・ 長押しで削除</div>
+<div class="hint">状態の星をタップ → 進行中（金）⇄ 寝かせ中（眠る）⇄ 決着（星座へ）<br>本文・アクションはタップで編集 ・ 分類は「＋」から ・ 長押しで削除</div>
 
 <!-- 土台 / foundation -->
 <section class="panel foundation">
@@ -358,6 +375,8 @@
   const CATS=["仕事","創作","家庭","自分"];
   let data=load();
   let filter="all";
+  let hideSettled=false;      // declutter the active sky (session only, like filter)
+  let catEditIndex=null;      // worry index whose category editor is open
   let pickedCats=new Set();   // categories chosen for the next new worry
 
   // ── helpers ──
@@ -466,7 +485,10 @@
     const box=document.getElementById("worries");
     box.innerHTML="";
     const items=[];
-    data.worries.forEach((w,i)=>{ if(filter==="all"||(w.cats||[]).includes(filter)) items.push([w,i]); });
+    data.worries.forEach((w,i)=>{
+      if(hideSettled && w.state==="settled") return;
+      if(filter==="all"||(w.cats||[]).includes(filter)) items.push([w,i]);
+    });
     if(items.length===0){
       box.innerHTML='<div class="empty-note">このレンズの空には、いま星が出ていない。</div>';
       return;
@@ -474,17 +496,27 @@
     items.forEach(([w,i])=>{
       const card=document.createElement("div");
       card.className="worry "+w.state;
-      const cats=(w.cats||[]).map(c=>`<span class="cat">${escapeHtml(c)}</span>`).join("");
       const resting=w.state==="rest";
       const hasAct=(w.act||"").trim().length>0;
       const actEmpty=!resting && !hasAct;
       const actShown=resting ? REST_TEXT : (hasAct ? w.act : "アクションを書く");
+      // category area: live toggle editor when this card is open, else chips + add affordance
+      let metaHtml;
+      if(catEditIndex===i){
+        metaHtml='<div class="meta cat-editor">'+
+          CATS.map(c=>`<button class="cat-tog" data-cat="${c}" aria-pressed="${(w.cats||[]).includes(c)}">${escapeHtml(c)}</button>`).join("")+
+          '<button class="cat-edit-btn done">完了</button>'+
+        '</div>';
+      }else{
+        const cats=(w.cats||[]).map(c=>`<span class="cat">${escapeHtml(c)}</span>`).join("");
+        metaHtml='<div class="meta">'+cats+'<button class="cat-edit-btn open">分類 ＋</button></div>';
+      }
       card.innerHTML=
         glyph(w.state)+
         `<div class="body">`+
           `<div class="text" role="button" tabindex="0">${escapeHtml(w.text)}</div>`+
           `<div class="act"><span class="arrow">→</span><span class="what${actEmpty?' empty':''}" role="button" tabindex="0">${escapeHtml(actShown)}</span></div>`+
-          `<div class="meta">${cats}</div>`+
+          metaHtml+
         `</div>`+
         `<div class="state s-${w.state}" role="button" tabindex="0">${LABEL[w.state]}</div>`;
       box.appendChild(card);
@@ -503,6 +535,21 @@
 
       // action: tap to edit the real action (even while resting, you can pre-write it)
       whatEl.addEventListener("click",()=>{ if(recentLong())return; editInline(whatEl, data.worries[i].act||"", v=>{ data.worries[i].act=v; save(); }); });
+
+      // categories: add / remove on an existing worry
+      const openBtn=card.querySelector(".cat-edit-btn.open");
+      if(openBtn) openBtn.addEventListener("click",()=>{ if(recentLong())return; catEditIndex=i; renderWorries(); });
+      const doneBtn=card.querySelector(".cat-edit-btn.done");
+      if(doneBtn) doneBtn.addEventListener("click",()=>{ catEditIndex=null; renderWorries(); });
+      card.querySelectorAll(".cat-tog").forEach(b=>{
+        b.addEventListener("click",()=>{
+          const c=b.dataset.cat;
+          const arr=Array.isArray(data.worries[i].cats)?data.worries[i].cats:(data.worries[i].cats=[]);
+          if(arr.includes(c)) data.worries[i].cats=arr.filter(x=>x!==c);
+          else data.worries[i].cats=CATS.filter(x=>arr.includes(x)||x===c);   // keep CATS order
+          save(); renderWorries();
+        });
+      });
     });
   }
   function cycleState(i){
@@ -512,12 +559,13 @@
     if(next==="settled") w.settledAt=Date.now();
     else w.settledAt=null;
     w.state=next;
+    catEditIndex=null;
     save(); renderAll();
   }
   function deleteWorry(i){
     const w=data.worries[i]; if(!w) return;
     const label=w.text.length>18 ? w.text.slice(0,18)+"…" : (w.text||"この悩み");
-    if(confirm("「"+label+"」を削除する？")){ data.worries.splice(i,1); save(); renderAll(); }
+    if(confirm("「"+label+"」を削除する？")){ data.worries.splice(i,1); catEditIndex=null; save(); renderAll(); }
   }
   function addWorry(){
     const inp=document.getElementById("newWorry");
@@ -528,6 +576,7 @@
     data.worries.unshift({text:t, state:"rest", act:"", cats, settledAt:null});
     inp.value="";
     clearPickedCats();
+    catEditIndex=null;
     filter="all";
     document.querySelectorAll(".lens .chip").forEach(c=>c.setAttribute("aria-pressed", c.dataset.cat==="all"));
     save(); renderWorries();
@@ -608,6 +657,7 @@
       }
       data=normalize(parsed);
       filter="all";
+      catEditIndex=null;
       clearPickedCats();
       document.querySelectorAll(".lens .chip").forEach(c=>c.setAttribute("aria-pressed", c.dataset.cat==="all"));
       save(); renderAll();
@@ -627,7 +677,16 @@
   document.getElementById("lens").addEventListener("click",e=>{
     const b=e.target.closest(".chip"); if(!b) return;
     filter=b.dataset.cat;
+    catEditIndex=null;
     document.querySelectorAll(".lens .chip").forEach(c=>c.setAttribute("aria-pressed", c===b));
+    renderWorries();
+  });
+
+  document.getElementById("toggleSettled").addEventListener("click",function(){
+    hideSettled=!hideSettled;
+    catEditIndex=null;
+    this.setAttribute("aria-pressed", hideSettled);
+    this.textContent = hideSettled ? "決着を表示" : "決着を隠す";
     renderWorries();
   });
 
